@@ -33,6 +33,7 @@ if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
 import _dispatch  # noqa: E402
+import _fire_ledger  # noqa: E402
 
 # Reuse the dispatcher's own decision markers so the tests track any change to
 # them (single source of truth — see _dispatch._ASK_MARKER / _DENY_MARKER).
@@ -1085,10 +1086,16 @@ def test_budget_exhausting_member_starves_no_one_silently(
     assert f"{_dispatch._SKIP_MARKER} advisory-nudge/late1" in hso["additionalContext"]
     assert f"{_dispatch._SKIP_MARKER} preflight-gate/late2" in hso["additionalContext"]
 
-    records = {
-        rec["hook"]: rec["decision"]
-        for rec in map(json.loads, ledger.read_text().splitlines())
-    }
+    # Both files: a `pass` is counted into a `fire-counts-*` sibling rather
+    # than written as a row (issue #1238), and "slow ran" is precisely a pass.
+    _fire_ledger.flush_pass_counts()
+    records = {}
+    for source in [ledger, *sorted(ledger.parent.glob("fire-counts-*.jsonl"))]:
+        if source.exists():
+            records.update({
+                rec["hook"]: rec["decision"]
+                for rec in map(json.loads, source.read_text().splitlines())
+            })
     assert records["slow"] == "pass"  # ran (its sleep is not a decision)
     assert records["late1"] == "skip"
     assert records["late2"] == "skip"
@@ -1155,8 +1162,13 @@ def test_fires_are_recorded_incrementally_not_after_the_loop(
         "    sys.stderr.write('first_recorded=%d' % ('\"first\"' in text))\n"
         "    return 0\n"
     )
+    # An advisory, not a pass: since issue #1238 a `pass` is buffered into the
+    # session's counter file and merged at process exit, so it is deliberately
+    # NOT on disk mid-group. The incremental guarantee this test pins is the
+    # one that still holds — and the one that matters, since every decision a
+    # gate or an audit reads is a non-pass.
     members = [
-        ("preflight-gate", "first", _write_fake(tmp_path, "first", _FAKE_PASS)),
+        ("preflight-gate", "first", _write_fake(tmp_path, "first", _FAKE_ADVISORY)),
         ("advisory-nudge", "reader", _write_fake(tmp_path, "reader", reader)),
     ]
     _patch_members(monkeypatch, members)

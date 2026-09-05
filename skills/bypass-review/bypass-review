@@ -89,6 +89,18 @@ issue #741, fire-rate mode):
       window are indistinguishable by timestamp alone, and a commit with no
       session active within the window is silently excluded (counted
       toward no session) rather than guessed.
+    - Issue #1238 made this fallback COARSER, and only this fallback. A
+      `pass` is no longer one row per fire but a counted run carrying its two
+      endpoints, so a session that fired steadily for hours now offers the
+      matcher two timestamps for that hook instead of hundreds. Replaying
+      2026-09-04's real ledger through the new writer moved 6 correlated
+      commits from 5 sessions onto 3 — the same commits, re-attributed,
+      because "nearest timestamp" now resolves against a sparser index. The
+      trailer path is exact and unaffected, and it is the reason this is
+      acceptable: a commit carrying `Session-Id:` never reaches the
+      heuristic. Every other figure in the report — fires, per-decision
+      counts, sessions, last-seen, bypass attribution, revert and
+      re-clarification signals — replayed byte-identical.
 
 Output sections:
   1. Summary — total events + date window
@@ -155,6 +167,8 @@ F_FIRE_HOOK = "hook"
 F_FIRE_ROLE = "role"
 F_FIRE_DECISION = "decision"
 F_FIRE_GRANULARITY = "granularity"
+F_FIRE_COUNT = "count"          # issue #1238: a folded run of `pass` fires
+F_FIRE_FIRST = "first_timestamp"  # issue #1238: the other end of that run
 
 _FIRE_DECISIONS = ("block", "ask", "advise", "pass")
 
@@ -322,7 +336,7 @@ def _dated_files(telemetry_dir: Path, family: str, date_str: str) -> list[Path]:
         if not p.is_file():
             continue
         tail = p.name[len(base):]
-        if not re.fullmatch(r"(\.[0-9a-f]+)?\.jsonl(\.gz)?", tail):
+        if not re.fullmatch(r"(\.[0-9A-Za-z_-]+)?\.jsonl(\.gz)?", tail):
             continue
         if tail.endswith(".jsonl") and tail != ".jsonl":
             archive = p.with_name(p.name + ".gz")
@@ -886,14 +900,34 @@ def load_fire_events(
     """
     events: list[dict] = []
     for date_str in date_range(days):
-        for path in _dated_files(telemetry_dir, "fire-events", date_str):
-            for record in _iter_jsonl_records(path):
-                if not include_test_sessions and is_test_session(
-                    str(record.get(FIELD_SESSION_ID) or "")
-                ):
-                    continue
-                events.append(record)
+        for family in ("fire-events", "fire-counts"):
+            for path in _dated_files(telemetry_dir, family, date_str):
+                for record in _iter_jsonl_records(path):
+                    if not include_test_sessions and is_test_session(
+                        str(record.get(FIELD_SESSION_ID) or "")
+                    ):
+                        continue
+                    events.append(record)
     return events
+
+
+def fire_count(event: dict) -> int:
+    """How many fires one record stands for.
+
+    Every record used to stand for exactly one fire. Since issue #1238 a
+    `pass` is not written as a row at all — it is added to a per-session
+    counter file whose records carry a `count`, so the same hook passing 120
+    times in a session arrives here as one record. A record with no `count`
+    (every non-pass row, and every archive written before #1238) is one fire,
+    which is what keeps the old files summing correctly.
+
+    A malformed or negative `count` reads as one rather than aborting: this
+    is a report, and one mis-summed hook must not empty the whole table.
+    """
+    value = event.get(F_FIRE_COUNT)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 1
+    return value
 
 
 def aggregate_fires(events: list[dict]) -> dict[str, dict]:
@@ -920,15 +954,16 @@ def aggregate_fires(events: list[dict]) -> dict[str, dict]:
             "sessions": set(), "last_seen": "", "coarse": False, "rich": False,
         })
         decision = ev.get(F_FIRE_DECISION)
+        fires = fire_count(ev)
         if decision == FIRE_DECISION_SKIP:
-            row["skip"] += 1
+            row["skip"] += fires
             ts = ev.get(F_FIRE_TIMESTAMP)
             if isinstance(ts, str) and ts > row["last_seen"]:
                 row["last_seen"] = ts
             continue  # not a fire — the member never ran
-        row["fires"] += 1
+        row["fires"] += fires
         if decision in _FIRE_DECISIONS:
-            row[decision] += 1
+            row[decision] += fires
         gran = ev.get(F_FIRE_GRANULARITY)
         if gran == "coarse":
             row["coarse"] = True
@@ -1205,7 +1240,7 @@ def compute_external_write_revert_counts(fire_events: list[dict]) -> dict[str, i
         sid = ev.get(F_FIRE_SESSION)
         if not isinstance(sid, str) or not sid:
             continue
-        counts[sid] = counts.get(sid, 0) + 1
+        counts[sid] = counts.get(sid, 0) + fire_count(ev)
     return counts
 
 
@@ -1232,7 +1267,7 @@ def compute_reclarification_loop_counts(fire_events: list[dict]) -> dict[str, in
         sid = ev.get(F_FIRE_SESSION)
         if not isinstance(sid, str) or not sid:
             continue
-        counts[sid] = counts.get(sid, 0) + 1
+        counts[sid] = counts.get(sid, 0) + fire_count(ev)
     return counts
 
 
@@ -1358,12 +1393,23 @@ def load_git_commits(repo_path: Path, days: int) -> list[dict]:
 
 
 def _session_timestamp_index(fire_events: list[dict]) -> dict[str, list[datetime]]:
+    """Per session, the fire-event timestamps that mark it as active.
+
+    A folded `pass` record (issue #1238) contributes BOTH of its endpoints,
+    since it stands for a run of fires rather than one. That is all the
+    density the fold leaves: the timestamps between the endpoints are gone,
+    which is why the correlation below is a fallback and the `Session-Id:`
+    trailer is the primary path.
+    """
     out: dict[str, list[datetime]] = {}
     for ev in fire_events:
         sid = ev.get(F_FIRE_SESSION)
-        ts = _parse_fire_ts(ev.get(F_FIRE_TIMESTAMP))
-        if isinstance(sid, str) and sid and ts:
-            out.setdefault(sid, []).append(ts)
+        if not (isinstance(sid, str) and sid):
+            continue
+        for field in (F_FIRE_TIMESTAMP, F_FIRE_FIRST):
+            ts = _parse_fire_ts(ev.get(field))
+            if ts:
+                out.setdefault(sid, []).append(ts)
     return out
 
 
