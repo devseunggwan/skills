@@ -119,6 +119,16 @@ roster is empty: every registered hook can produce fire events.
 to compare against; `Ignored` means that later fire was `advise` again — the
 flagged condition recurred unchanged.
 
+> **The metric this axis was scored from no longer exists (issue #1238).** Its
+> whole inference is "the next fire of this hook was a `pass`, so the advisory
+> was heeded", and since #1238 a `pass` is not a row in the stream at all — it
+> is a per-session counter, which carries no position relative to the advise
+> that preceded it. The numbers below stand as the measurement that was taken;
+> `bypass-review fire-rate` no longer prints an `Advise-Ignored Detail`
+> section, so they cannot be re-derived from a ledger written after that
+> change. Re-deriving them needs the ordered stream back, which is the cost
+> this axis was traded against.
+
 | Hook | Ignored / Observed | Rate | Verdict |
 | --- | --- | --- | --- |
 | `pipefail-advisory` | 250 / 1056 | 24% | **Keep — and the single largest advisory load.** See the ADVISE-tier note below. |

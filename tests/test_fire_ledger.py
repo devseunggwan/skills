@@ -946,128 +946,6 @@ def test_fire_report_header_excludes_skip_only_hooks():
 
 
 # ---------------------------------------------------------------------------
-# issue #710 remaining scope: advise_ignored_rate
-# ---------------------------------------------------------------------------
-
-def test_advise_ignored_counts_recurrence_without_escalation():
-    """advise@0's next fire is advise@10 (ignored); advise@10's next fire is
-    block@20 (escalated, not ignored) -> observed=2, ignored=1, rate=0.5."""
-    events = [
-        {"hook": "h", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:00+00:00"},
-        {"hook": "h", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:10+00:00"},
-        {"hook": "h", "session_id": "s1", "decision": "block", "timestamp": "2026-06-26T00:00:20+00:00"},
-    ]
-    result = cli.compute_advise_ignored(events)
-    row = result["h"]
-    assert row["advise_fires"] == 2
-    assert row["observed"] == 2
-    assert row["ignored"] == 1
-    assert row["rate"] == 0.5
-
-
-def test_advise_ignored_escalation_to_block_is_not_ignored():
-    events = [
-        {"hook": "h", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:00+00:00"},
-        {"hook": "h", "session_id": "s1", "decision": "block", "timestamp": "2026-06-26T00:00:10+00:00"},
-    ]
-    result = cli.compute_advise_ignored(events)
-    row = result["h"]
-    assert row["observed"] == 1
-    assert row["ignored"] == 0
-    assert row["rate"] == 0.0
-
-
-def test_advise_ignored_last_fire_in_session_is_right_censored():
-    """A trailing advise with no follow-up in the session is excluded from
-    the observed denominator — it must not be silently counted either way."""
-    events = [
-        {"hook": "h", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:00+00:00"},
-    ]
-    result = cli.compute_advise_ignored(events)
-    row = result["h"]
-    assert row["advise_fires"] == 1
-    assert row["observed"] == 0
-    assert row["ignored"] == 0
-    assert row["rate"] is None
-
-
-def test_advise_ignored_scoped_per_session_not_cross_session():
-    """The 'next fire' lookup must not cross session boundaries — a fire in
-    session s2 must never resolve session s1's advise outcome."""
-    events = [
-        {"hook": "h", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:00+00:00"},
-        {"hook": "h", "session_id": "s2", "decision": "block", "timestamp": "2026-06-26T00:00:05+00:00"},
-    ]
-    result = cli.compute_advise_ignored(events)
-    row = result["h"]
-    assert row["observed"] == 0  # s1's lone advise has no same-session follow-up
-    assert row["rate"] is None
-
-
-def test_advise_ignored_pass_after_advise_is_heeded_not_ignored():
-    """A 'pass' after 'advise' means the hook stopped flagging — the call
-    changed enough to satisfy it. Must NOT be counted as ignored (codex
-    review finding, praxis PR): counting pass as ignored inflates the rate
-    on the exact case the metric exists to distinguish from real recurrence."""
-    events = [
-        {"hook": "h", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:00+00:00"},
-        {"hook": "h", "session_id": "s1", "decision": "pass", "timestamp": "2026-06-26T00:00:10+00:00"},
-    ]
-    result = cli.compute_advise_ignored(events)
-    row = result["h"]
-    assert row["observed"] == 1
-    assert row["ignored"] == 0
-    assert row["rate"] == 0.0
-
-
-def test_advise_ignored_skip_is_not_an_outcome():
-    """issue #1167 / PR #1195 review: a budget-skip after an advise means the
-    hook never EVALUATED the next call — it is not evidence the advisory was
-    heeded. Skips are dropped from the stream: advise → skip → advise still
-    scores as ignored (the condition recurred at the next real evaluation),
-    and advise → skip alone stays right-censored."""
-    events = [
-        {"hook": "h", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:00+00:00"},
-        {"hook": "h", "session_id": "s1", "decision": "skip", "timestamp": "2026-06-26T00:00:10+00:00"},
-        {"hook": "h", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:20+00:00"},
-        {"hook": "g", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:00+00:00"},
-        {"hook": "g", "session_id": "s1", "decision": "skip", "timestamp": "2026-06-26T00:00:10+00:00"},
-    ]
-    result = cli.compute_advise_ignored(events)
-    assert result["h"]["observed"] == 1
-    assert result["h"]["ignored"] == 1  # recurred at the next REAL evaluation
-    assert result["g"]["advise_fires"] == 1
-    assert result["g"]["observed"] == 0  # skip is not a follow-up: censored
-    assert result["g"]["rate"] is None
-
-
-def test_advise_ignored_excludes_partial_rich_stop_hook_when_scoped():
-    """issue #847: a single-event-rich Stop hook records only escalations —
-    its silent passes never reach the rich stream, so advise, advise (the
-    intervening heeded pass invisible) would mis-score as ignored=100%. When a
-    full-rich roster is supplied, the partial-stream hook is excluded entirely
-    while a genuine full-rich hook is still scored."""
-    events = [
-        # partial-rich Stop hook: two advises, the heeded pass between them is
-        # never recorded rich, so leaving it in would read as ignored.
-        {"hook": "merge-state-claim-gate", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:00+00:00"},
-        {"hook": "merge-state-claim-gate", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:20+00:00"},
-        # full-rich Bash-group hook: advise then pass (heeded) — still scored.
-        {"hook": "destructive-bash-guard", "session_id": "s1", "decision": "advise", "timestamp": "2026-06-26T00:00:00+00:00"},
-        {"hook": "destructive-bash-guard", "session_id": "s1", "decision": "pass", "timestamp": "2026-06-26T00:00:10+00:00"},
-    ]
-    scoped = cli.compute_advise_ignored(events, {"destructive-bash-guard"})
-    assert "merge-state-claim-gate" not in scoped  # partial stream — excluded
-    assert scoped["destructive-bash-guard"]["observed"] == 1
-    assert scoped["destructive-bash-guard"]["ignored"] == 0  # pass = heeded
-
-    # None (roster unreadable) falls back to legacy unscoped behavior — the
-    # partial-rich hook reappears and its advise, advise reads as ignored.
-    legacy = cli.compute_advise_ignored(events)
-    assert legacy["merge-state-claim-gate"]["ignored"] == 1
-
-
-# ---------------------------------------------------------------------------
 # issue #710 remaining scope: bypass_count join
 # ---------------------------------------------------------------------------
 
@@ -1680,9 +1558,7 @@ def test_fire_rate_report_includes_remaining_scope_sections(tmp_path, monkeypatc
     report = buf.getvalue()
 
     assert rc == 0
-    assert "Advise-Ignored Detail" in report
     assert "destructive-bash-guard" in report
-    assert "100%" in report  # both advise fires ignored (no escalation)
     assert "Bypass Attribution" in report
     assert "Outcome Proxy" in report
     assert "s1" in report and "1" in report  # strike_count surfaced
