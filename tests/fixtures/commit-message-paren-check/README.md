@@ -30,6 +30,7 @@ green run from meaning "the gate always fires".
 | `e399693e.txt`  | rejected | line 18, unclosed            |
 | `4d83c916.txt`  | rejected | line 189, nested             |
 | `54128d0c.txt`  | rejected | line 17, unclosed            |
+| `9ea4785a.txt`  | rejected | line 75, nested              |
 | `ed44c51.txt`   | accepted | —                            |
 | `5fdff21.txt`   | accepted | —                            |
 | `3d6a72f.txt`   | accepted | —                            |
