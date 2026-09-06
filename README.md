@@ -115,9 +115,9 @@ shipped CLI wrapper.
 
 ## Hooks
 
-Hooks are the larger half of praxis: **97 hooks**, registered at 109 points across
-`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `UserPromptSubmit`, and
-`SessionStart`. They run
+Hooks are the larger half of praxis: **97 hooks**, registered at 112 points across
+`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `SubagentStop`,
+`UserPromptSubmit`, and `SessionStart`. They run
 without being invoked, so this section is the one to read before installing — it is what
 changes about your session.
 

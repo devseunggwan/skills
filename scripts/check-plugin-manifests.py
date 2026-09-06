@@ -132,6 +132,15 @@ main() is labeled with its number, and this list is the canonical roster
       `dependencies` was rejected for this (no optional form — see
       ARCHITECTURE.md), so the declaration is documentary and this rule keeps
       it true.
+  28. Claude-only events declare it (#1337): every registration on an event
+      only Claude Code raises — `PostToolUseFailure`, `SubagentStop` — must
+      carry `hosts: ["claude"]`. `hosts` is optional in the schema and an
+      absent value means every host, so a registration that forgets it is
+      written into the Codex and Cursor `hooks.json` for an event those hosts
+      never fire. The schema states the contract in its `event` description;
+      this is the half that enforces it, because JSON Schema's supported
+      subset here cannot express "if event is X then hosts must be Y".
+      (Numbered 28 to leave 27 to the parallel #1332 branch.)
 
 An unnumbered auxiliary check verifies the Codex adapter symlinks
 (plugins/praxis/{skills,hooks,scripts} → repo root).
@@ -166,6 +175,11 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Events only Claude Code raises. A registration on one of these must declare
+# `hosts: ["claude"]` — Rule 28 (#1337). Kept beside the schema's `event`
+# enum description, which states the same contract in prose.
+CLAUDE_ONLY_EVENTS = ("PostToolUseFailure", "SubagentStop")
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 _spec = importlib.util.spec_from_file_location(
@@ -2455,6 +2469,31 @@ def main() -> int:
             drifts.append(
                 f"HOOK DEPS NO INSTALL README.md: {comp!r} row has an empty "
                 "install cell (#1332)"
+            )
+
+    # ------------------------------------------------------------------
+    # Rule 28 — Claude-only events declare `hosts: ["claude"]` (#1337)
+    #
+    # `PostToolUseFailure` and `SubagentStop` exist only in Claude Code. The
+    # `hosts` field is optional and absent means "every host", so a
+    # registration that omits it is emitted into the Codex and Cursor
+    # hooks.json for an event those hosts never raise — silent manifest drift,
+    # not a runtime fault, which is exactly the kind a checker is for. The
+    # schema's `event` description already states the contract; the supported
+    # JSON-Schema subset cannot express the conditional, so it lives here.
+    # ------------------------------------------------------------------
+    for entry in manifest["hooks"]:
+        event = entry.get("event")
+        if event not in CLAUDE_ONLY_EVENTS:
+            continue
+        hosts = entry.get("hosts")
+        if hosts != ["claude"]:
+            drifts.append(
+                f"CLAUDE-ONLY HOSTS {entry.get('name')!r}: its {event} "
+                f"registration declares hosts={hosts!r}, expected "
+                '[\'claude\'] — the event exists only in Claude Code, and an '
+                "absent or wider value writes the hook into the Codex and "
+                "Cursor hooks.json for an event they never raise (#1337)"
             )
 
     if drifts:
