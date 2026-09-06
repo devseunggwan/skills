@@ -303,8 +303,25 @@ the MCP leg used (`hooks/_lib/_external_write_body.py`) stays: the opt-in
 
 **What would reopen it.** A ledger with `tool` values matching
 `mcp__.*slack.*|mcp__.*notion.*` against these three names, from a machine that
-has those servers. Re-registering is a manifest entry and an `elif` arm; the
-tests that used to assert the warn now assert silence, so they mark the spot.
+has those servers.
+
+Restoring it is more than the two obvious edits, and an earlier draft of this
+paragraph named only those two (CodeRabbit on #1360). All six, per hook:
+
+1. the `mcp__.*slack.*|mcp__.*notion.*` entry in `hooks/manifest.json`, with
+   its `requires: ["slack-or-notion-mcp"]`;
+2. the `Requires:` header line in `spec.md`, or the manifest-side declaration
+   fails Rule 20's both-or-neither check;
+3. the MCP entries in that spec's scanned-surface list, and the removal note
+   this section is cited from;
+4. the `elif is_mcp_external_write(...)` arm in `impl.py`, and its two imports;
+5. `./scripts/build-plugin-manifests.py`, which re-emits the standalone
+   wrapper `hooks/<name>.sh` and the generated `hooks.json` / operating-matrix
+   rows — Rule 6b fails while the entry exists without its wrapper;
+6. the README registration-point count, which Rule 23 checks.
+
+The tests that used to assert the warn now assert silence, so they fail on a
+restored registration and mark the spot.
 
 ## Bottom line
 

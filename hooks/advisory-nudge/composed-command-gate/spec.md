@@ -213,8 +213,8 @@ output).
 `mcp__.*slack.*|mcp__.*notion.*` registration this hook carried was dropped
 on an owner judgement: it hardcoded two vendors into the runtime surface for
 a leg that only reaches an installer who has such a server, and no fire was
-ever measured on it. The rule itself is unchanged — it still fires on every
-`gh` external write. The body extractor those writes used
+ever measured on it. The rule itself is unchanged — it still scans `gh` external writes and fires when a
+fenced `$` line matches T1 or, against the transcript, T2. The body extractor those writes used
 (`_lib/_external_write_body.py`) stays: the opt-in
 `external-write-falsify-check` still consumes it.
 
