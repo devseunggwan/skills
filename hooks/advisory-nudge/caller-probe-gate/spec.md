@@ -1,9 +1,9 @@
 # PreToolUse Caller Probe Gate
 
 Supported hosts: all
-Requires: slack-or-notion-mcp (mcp matcher entry only — the Bash entry carries no requirement)
 
-`hooks/caller-probe-gate.sh` is a **default-on** PreToolUse advisory that
+`hooks/advisory-nudge/caller-probe-gate/impl.py` is a **default-on**
+PreToolUse(Bash) advisory that
 fires when an external-write body asserts that identified code is
 **defective** and no **call-site search** appears in the recent transcript or
 in the body itself.
@@ -68,7 +68,7 @@ from the token list — they match ordinary prose and would swamp the signal.
 
 Surfaces scanned are the shared set from `_lib/_external_write_body.py`:
 `gh issue|pr comment|create|edit` and `gh pr review` with `--body` / `-b` /
-`--body=` / `--body-file` / `-F`, plus Slack/Notion MCP writes, plus the
+`--body=` / `--body-file` / `-F`, plus the
 `gh api` comment endpoints (issue #1265) — a `POST` / `PATCH` / `PUT` against
 `repos/{o}/{r}/issues/comments/<id>`, `issues/<n>/comments`,
 `pulls/comments/<id>`, `pulls/<n>/comments` or `pulls/<n>/reviews`, with the
@@ -183,6 +183,15 @@ one line of noise, not a blocked call.
 - Literal `\n` inside a quoted `--body` value splits the body, and
   `--body-file -` (stdin) silent-passes — both inherited from the shared
   extraction module.
+
+**Slack / Notion MCP writes are out of scope (#1359).** The
+`mcp__.*slack.*|mcp__.*notion.*` registration this hook carried was dropped
+on an owner judgement: it hardcoded two vendors into the runtime surface for
+a leg that only reaches an installer who has such a server, and no fire was
+ever measured on it. The rule itself is unchanged — it still fires on every
+`gh` external write. The body extractor those writes used
+(`_lib/_external_write_body.py`) stays: the opt-in
+`external-write-falsify-check` still consumes it.
 
 ## Tests
 

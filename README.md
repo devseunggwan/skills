@@ -115,7 +115,7 @@ shipped CLI wrapper.
 
 ## Hooks
 
-Hooks are the larger half of praxis: **96 hooks**, registered at 111 points across
+Hooks are the larger half of praxis: **96 hooks**, registered at 108 points across
 `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `UserPromptSubmit`, and
 `SessionStart`. They run
 without being invoked, so this section is the one to read before installing — it is what

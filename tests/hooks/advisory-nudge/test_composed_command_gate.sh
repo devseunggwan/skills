@@ -412,8 +412,12 @@ print(json.dumps({
     "tool_input": {"text": body},
     "transcript_path": os.environ["TRANSCRIPT"],
 }))')
-run_case "MCP Slack body with assembled line (warn)" \
-  "warn" "advisory" "$MCP_PAYLOAD"
+# The Slack/Notion MCP registrations were dropped (#1359); these hooks are
+# PreToolUse(Bash) only now, so an MCP payload falls through the `else` arm
+# and is silent. Kept as the regression pin for the removal — the payloads
+# still carry the shapes that used to warn.
+run_case "MCP Slack body is out of scope (silent)" \
+  "silent" "advisory" "$MCP_PAYLOAD"
 
 run_case "non-write tool (silent)" \
   "silent" "advisory" \
