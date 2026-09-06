@@ -64,7 +64,6 @@ stock Claude Code session without the named component:
 | `codex-review-route` | Matches only `^/codex(:\|-)review` prompts — inert without the openai-codex plugin; also needs `jq` + `gh` | `impl.sh:42` |
 | `model-routing-advisory` | Recognizes only `cmux …`/`cmux-delegate` delegation argv | `impl.py:14-15` |
 | `momentum-rule-retrieval-gate` (dispatch trigger only) | `cmux new-workspace` arm dead without cmux; merge/force-push arms still live | `impl.py:15` |
-| ~~`caller-probe-gate`, `source-citation-probe-gate` (MCP matcher only)~~ | ~~`mcp__.*slack.*\|mcp__.*notion.*` entries never match without those servers; Bash matcher still live~~ — **resolved by removal, not declaration**: those registrations were dropped on an owner judgement (#1359, verdict in [`hook-prune-audit.md`](hook-prune-audit.md#dropped-registrations)). `composed-command-gate` carried the same pair and is covered by the same removal | `hooks/manifest.json` |
 | `block-unmatched-glob` | Verdict delegated to `zsh -f`; no zsh → vacuous pass | `impl.py:14-15`, `spec.md:82` |
 | `memory-hint` | Permanent no-op without a memory dir using `hookable:`/`hookKeywords:` frontmatter | `impl.py:27-30` |
 | `builtin-task-postuse` | Exists to correct **oh-my-claudecode** `pre-tool-enforcer` false positives; without omc there is nothing to correct | its `spec.md` |
