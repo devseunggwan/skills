@@ -1114,16 +1114,6 @@
       }
     },
     {
-      "name": "source-citation-probe-gate",
-      "role": "advisory-nudge",
-      "event": "PreToolUse",
-      "matcher": "mcp__.*slack.*|mcp__.*notion.*",
-      "requires": [
-        "slack-or-notion-mcp"
-      ],
-      "timeout": 5
-    },
-    {
       "name": "composed-command-gate",
       "role": "advisory-nudge",
       "event": "PreToolUse",
@@ -1133,16 +1123,6 @@
       "mode": {
         "strict_env": "PRAXIS_COMPOSED_COMMAND_STRICT"
       }
-    },
-    {
-      "name": "composed-command-gate",
-      "role": "advisory-nudge",
-      "event": "PreToolUse",
-      "matcher": "mcp__.*slack.*|mcp__.*notion.*",
-      "requires": [
-        "slack-or-notion-mcp"
-      ],
-      "timeout": 5
     },
     {
       "name": "caller-probe-gate",
@@ -1171,16 +1151,6 @@
           "PRAXIS_UNENFORCED_STEP_SKIP"
         ]
       }
-    },
-    {
-      "name": "caller-probe-gate",
-      "role": "advisory-nudge",
-      "event": "PreToolUse",
-      "matcher": "mcp__.*slack.*|mcp__.*notion.*",
-      "requires": [
-        "slack-or-notion-mcp"
-      ],
-      "timeout": 5
     },
     {
       "name": "builtin-task-postuse",
