@@ -115,7 +115,7 @@ shipped CLI wrapper.
 
 ## Hooks
 
-Hooks are the larger half of praxis: **97 hooks**, registered at 112 points across
+Hooks are the larger half of praxis: **97 hooks**, registered at 109 points across
 `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `UserPromptSubmit`, and
 `SessionStart`. They run
 without being invoked, so this section is the one to read before installing — it is what
@@ -205,7 +205,6 @@ checks the two against each other in both directions (#1332).
 | `cmux` | `model-routing-advisory` | Mac app installer (the Full tier below) |
 | `codex-plugin` | `codex-review-route` | `/plugin marketplace add openai/codex-plugin-cc`, then `/plugin install codex@openai-codex` |
 | `hookable-memory-store` | `memory-hint` | a memory directory whose entries carry `hookable:` frontmatter, located per `hooks/_lib/_memory_dir.py` (`PRAXIS_MEMORY_DIR` overrides) |
-| `slack-or-notion-mcp` | `caller-probe-gate`, `composed-command-gate`, `source-citation-probe-gate` | a Slack or Notion MCP server (`claude mcp add …`); each hook's Bash matcher still fires without one |
 | `zsh` | `block-unmatched-glob` | `brew install zsh`, or the distro package |
 
 `builtin-task-postuse` is the one hook whose premise is another plugin rather
