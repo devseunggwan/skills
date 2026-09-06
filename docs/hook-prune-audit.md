@@ -259,60 +259,8 @@ escalation counts as provisional.
 | **Keep, but not scoreable on Axis 4** | 2 | `askuserquestion-loop-signal` (observe-only by design — no escalation path), `pytest-direct-exec-advisory` (8 sessions) |
 | **Keep, but coarse-recorded — Axis 4 cannot see them** | 18 | The coarse-only list under Axis 4, including `memory-hint` (68,799 fires against 12 memories declaring `hookable: true`; its 0 escalations are *measurement-absent*, so the open question — do its `hookKeywords` match real tool-call text? — stays open) |
 | **Unmeasurable — instrument first** | 0 | — (closed by #847 + #892; see Axis 1) |
-| **Drop** | 0 hooks; 3 *registrations* | The `mcp__.*slack.*\|mcp__.*notion.*` entries of `caller-probe-gate`, `composed-command-gate` and `source-citation-probe-gate` — see [Dropped registrations](#dropped-registrations) below. No hook NAME was dropped; all three keep their Bash registration |
+| **Drop** | 0 hooks; 3 *registrations* | The `mcp__.*slack.*\|mcp__.*notion.*` entries of `caller-probe-gate`, `composed-command-gate` and `source-citation-probe-gate`, removed 2026-09-06 (#1359). No hook NAME was dropped; all three keep their Bash registration |
 | **Total** | 81 | Matches `hooks/manifest.json`'s 81 distinct names (60+1+2+18) |
-
-## Dropped registrations
-
-This table scores hook **names**. A name can carry several registrations, and
-the axes above cannot separate them: the ledger records `hook` and `tool`, so a
-fire tells you *which tool* it came from, but the summary counts are per name.
-That blind spot is where the one removal so far sits.
-
-### `mcp__.*slack.*|mcp__.*notion.*` on the three external-write gates (#1359)
-
-`caller-probe-gate`, `composed-command-gate` and `source-citation-probe-gate`
-each carried a second registration on that matcher, so their rules also
-applied to Slack messages and Notion pages written through an MCP server.
-Dropped 2026-09-06.
-
-**This is an owner judgement, not a measured drop, and the distinction is the
-point of recording it here.** No fire was ever observed on the MCP leg, but no
-fire *could* have been: the environment where the question was asked has no
-Slack or Notion MCP server attached, so the ledger evidence is
-**measurement-absent**, exactly like `memory-hint`'s zero escalations above —
-not evidence of absence. The owner decided without waiting for the
-measurement. What the decision rested on instead:
-
-- The matcher hardcodes two named SaaS vendors into the runtime surface. §C of
-  [`hook-suitability-audit.md`](hook-suitability-audit.md) already flags
-  author-specific assets shipped in a public plugin; the fixtures for this leg
-  used `mcp__laplace-slack__` and `mcp__laplace-notion__`, the author's own
-  namespace.
-- The leg only ever reaches an installer who already has such a server, and
-  such a server is typically provisioned by an employer rather than installed
-  for praxis. It is not something a reader of the README could act on.
-- Each registration cost a standalone wrapper node — one process spawn per
-  matching call — because the matcher is not a dispatch group.
-
-**What was NOT dropped.** All three rules are unchanged and still fire on every
-`gh` external write, which is where PR and issue bodies go. The body extractor
-the MCP leg used (`hooks/_lib/_external_write_body.py`) stays: the opt-in
-`external-write-falsify-check` still consumes it.
-`approval-premise-reread-gate` keeps its own broader `mcp__.*` matcher.
-
-**What would reopen it.** A ledger with `tool` values matching
-`mcp__.*slack.*|mcp__.*notion.*` against these three names, from a machine that
-has those servers.
-
-Restoring it is `git revert 2c0e05b` — the squash commit carries every edit,
-across all three hooks. Nothing needs to be reconstructed by hand, and a
-partial restoration cannot pass `./scripts/check-plugin-manifests.py`: Rule 6
-rejects a manifest entry whose wrapper is missing, Rule 20 rejects a `requires`
-declared on only one of the two sides, Rule 23 rejects a stale README
-registration count, and Rule 27 rejects a `requires` with no row in the
-README's `### Hook dependencies` table. The tests that used to assert the warn
-now assert silence, so they fail on a restored registration too.
 
 ## Bottom line
 
