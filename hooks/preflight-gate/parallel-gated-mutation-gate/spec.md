@@ -23,8 +23,8 @@ moved on. There was no event positioned between "the batch resolved" and "the
 model reads the result".
 
 `PostToolBatch` is that position. The measured harm it addresses is praxis
-#98/#99: one intent, two `gh issue create` calls emitted in a single parallel
-batch, two issues created, both needing manual closure.
+issues #98/#99 — one intent, two `gh issue create` calls emitted in a single
+parallel batch, two issues created, both needing manual closure.
 
 ### What is gated
 
@@ -36,7 +36,9 @@ both sets are empty, which is what a creation looks like.
 | ------- | --------- | ----- |
 | `gh issue create …` × 2 | **block** | Both target sets empty. A creation names no target, so two are indistinguishable by intent — the #98/#99 shape |
 | `gh issue edit 23 34` + `gh issue edit 34 23` | **block** | Sets intersect. Argument order is not identity |
-| `gh issue edit <issue URL for 42>` + `gh issue edit 42` | **block** | `_normalize_target` reduces a URL, a `#42` and a bare `42` to one identity |
+| `gh issue edit <issue URL for 42>` + `gh issue edit 42` | **block** | One identity. The URL names a repository and the bare number names none, and an unknown scope is compatible with every scope |
+| `gh issue edit <URL for org-a/repo-a#42>` + `<URL for org-b/repo-b#42>` | pass | Different repositories. Issue 42 of one repo is not issue 42 of another |
+| `gh issue edit --repo o/r 1 …` + `gh issue edit --repo o/r 2 …` | pass | Targets sit after the persistent flag and are still read |
 | `gh pr comment 12 …` + `gh pr comment 34 …` | pass | Disjoint targets. Commenting on two PRs at once is ordinary parallel work |
 | `gh issue create …` + `gh pr create …` | pass | Different nouns. One intent legitimately opens an issue and its PR |
 | `gh issue create … && gh issue create …` in ONE call | **block** | The same duplicate shape written serially. The walk covers every command start |
@@ -78,6 +80,28 @@ Scope is `issue`, `pr`, `release`. Other nouns (`repo`, `api`, `gist`,
 `secret`) are not classified and a duplicate there passes. Widening the noun
 set changes this hook's threat model and belongs in its own issue rather than
 in a silent constant edit.
+
+### Repository scope, and why an unknown one is a wildcard
+
+A second review round found three **false positives** — the opposite direction
+to the three above, and just as wrong. `gh issue edit https://…/org-a/repo-a/issues/42`
+and the same URL under `org-b/repo-b` were blocked as one record, because the
+number alone was the identity. And `gh issue edit --repo o/r 1` collected no
+target at all, since the walk stopped at the first flag, so two edits of
+different issues looked like two untargeted mutations.
+
+Both are fixed by carrying the repository: a URL yields its `owner/repo`, an
+explicit `--repo`/`-R` yields its value, and target collection now steps over
+that flag instead of halting on it. It still halts at any *other* flag, because
+an unknown flag's value cannot be told from a positional and reading it as a
+target would invent an identity.
+
+A call that names no repository resolves to whatever the working directory
+points at, which the payload does not carry. That unknown is treated as
+compatible with **every** repository rather than with none — otherwise a batch
+mixing a URL with a bare number, the very duplicate this gate exists for, would
+pass. Two *explicitly different* repositories are the only pair that cannot
+collide.
 
 ### Why exit 2 when the mutations already ran
 
@@ -122,11 +146,15 @@ exit 0.
 
 ### Tests
 
-`tests/hooks/preflight-gate/test_parallel_gated_mutation_gate.sh` — 20 cases.
+`tests/hooks/preflight-gate/test_parallel_gated_mutation_gate.sh` — 26 cases.
 Duplicate creations block; distinct targets, distinct nouns, reads, a single
 creation and disjoint edit sets pass; the serial-in-one-call form blocks; a
 malformed payload fails open; and the documented-but-wrong `tools` field name
 does not silently satisfy the gate. Seven cases pin the three repaired silent
 passes above (persistent flag before the noun and between noun and verb, target
 set reordering, URL-versus-number identity, `-h` as a flag value, `pr revert`,
-`issue transfer`), each paired with a passing control.
+`issue transfer`), each paired with a passing control. Six more pin the three
+repaired false positives (equal numbers in different repositories in both the
+URL and `--repo` spellings, targets after the persistent flag, creations in
+different repositories), each paired with a blocking control so the fix cannot
+be mistaken for the gate simply going quiet.

@@ -158,6 +158,40 @@ run_case "$_case_n pass: edits on disjoint target sets" pass tool_calls \
   "gh issue edit 1 2 --add-label x" \
   "gh issue edit 3 4 --add-label y"
 
+# --- regressions found by the second review round, each a FALSE POSITIVE ------
+# The block above fixed silent passes; these three went the other way and
+# blocked legitimate parallel work. Blocking controls for all of them follow.
+
+_case_n=$((_case_n + 1))
+run_case "$_case_n pass: same number in two DIFFERENT repos (URL form)" pass tool_calls \
+  "gh issue edit https://github.com/org-a/repo-a/issues/42 --add-label x" \
+  "gh issue edit https://github.com/org-b/repo-b/issues/42 --add-label y"
+
+_case_n=$((_case_n + 1))
+run_case "$_case_n pass: same number in two DIFFERENT repos (--repo form)" pass tool_calls \
+  "gh issue edit --repo org-a/repo-a 42 --add-label x" \
+  "gh issue edit --repo org-b/repo-b 42 --add-label y"
+
+_case_n=$((_case_n + 1))
+run_case "$_case_n pass: targets sit AFTER the persistent flag" pass tool_calls \
+  "gh issue edit --repo org/repo 1 --add-label x" \
+  "gh issue edit --repo org/repo 2 --add-label y"
+
+_case_n=$((_case_n + 1))
+run_case "$_case_n pass: creations in two different repos" pass tool_calls \
+  "gh issue create --repo a/x --title p" \
+  "gh issue create --repo b/y --title q"
+
+_case_n=$((_case_n + 1))
+run_case "$_case_n block: same repo and same number, targets after --repo" block tool_calls \
+  "gh issue edit --repo org/repo 1 --add-label x" \
+  "gh issue edit --repo org/repo 1 --add-label y"
+
+_case_n=$((_case_n + 1))
+run_case "$_case_n block: a URL scope and an unscoped number still collide" block tool_calls \
+  "gh issue edit https://github.com/o/r/issues/42 --add-label x" \
+  "gh issue edit 42 --add-label y"
+
 # --- the documented-but-wrong field name must not satisfy the gate -----------
 # Positive control: the SAME two commands under `tool_calls` block (case 1
 # above). Under the reference's `tools` name the gate sees an empty batch, so a

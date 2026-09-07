@@ -146,34 +146,51 @@ def _is_gh(token: str) -> bool:
     return token == "gh" or token.endswith("/gh")
 
 
-def _normalize_target(token: str) -> str:
-    """Reduce an issue/PR reference to a comparable identity.
+def _normalize_target(token: str) -> tuple[str | None, str]:
+    """Reduce an issue/PR reference to `(repository, identity)`.
 
     `https://github.com/o/r/issues/42`, `#42` and `42` all name the same
-    record, and a batch that mixes the forms is still a duplicate. A branch
-    name (`gh pr merge my-branch`) has no numeric form and is returned as
-    written.
+    record *within one repository*, and a batch mixing the forms is still a
+    duplicate. The number alone is not an identity, though: issue 42 of one
+    repository and issue 42 of another are different records, so a URL carries
+    its `owner/repo` out with it. A bare number names whatever repository the
+    call resolves to, which the payload does not say, so its repository is
+    None — see `_repos_compatible`. A branch name (`gh pr merge my-branch`)
+    has no numeric form and is returned as written.
     """
     token = token.rstrip("/")
-    tail = token.rsplit("/", 1)[-1].lstrip("#")
-    return tail or token
+    parts = token.split("/")
+    repo: str | None = None
+    if len(parts) >= 5 and parts[-2] in ("issues", "pull", "releases"):
+        repo = f"{parts[-4]}/{parts[-3]}"
+    tail = parts[-1].lstrip("#")
+    return repo, (tail or token)
 
 
-def _split_gh(argv: list[str]) -> tuple[str, str, list[str]] | None:
-    """`(noun, verb, positional targets)` for a gh call, or None.
+def _split_gh(argv: list[str]) -> tuple[str, str, list[str], str | None] | None:
+    """`(noun, verb, targets, repository)` for a gh call, or None.
 
     Flags are skipped wherever they appear — before the noun, between noun and
     verb, or after — because `gh` accepts a persistent flag in all three
-    places. Targets are the positional tokens that follow the verb up to the
-    first flag, which is where `gh` puts them; a token after a flag may be that
-    flag's value and is not treated as a target.
+    places. `--repo`/`-R` is the one that takes a value, so its value is
+    consumed rather than read as a target, and it is returned as the call's
+    repository scope.
+
+    Target collection stops at the first flag that is NOT `--repo`/`-R`,
+    because an unknown flag's value is indistinguishable from a positional and
+    reading it as a target would invent an identity. `--repo` is skipped
+    instead of stopping the walk: `gh issue edit --repo o/r 1` puts the real
+    target after it, and stopping there left the call looking untargeted.
     """
     i = 1
     words: list[str] = []
+    repo: str | None = None
     while i < len(argv) and len(words) < 2:
         tok = argv[i]
         if tok.startswith("-"):
             if tok in _GLOBAL_VALUE_FLAGS:
+                if i + 1 < len(argv):
+                    repo = argv[i + 1]
                 i += 2
                 continue
             i += 1
@@ -183,20 +200,34 @@ def _split_gh(argv: list[str]) -> tuple[str, str, list[str]] | None:
     if len(words) < 2:
         return None
     targets: list[str] = []
-    while i < len(argv) and not argv[i].startswith("-"):
-        targets.append(_normalize_target(argv[i]))
+    url_repos: set[str] = set()
+    while i < len(argv):
+        tok = argv[i]
+        if tok.startswith("-"):
+            if tok in _GLOBAL_VALUE_FLAGS:
+                if i + 1 < len(argv):
+                    repo = argv[i + 1]
+                i += 2
+                continue
+            break
+        target_repo, identity = _normalize_target(tok)
+        if target_repo is not None:
+            url_repos.add(target_repo)
+        targets.append(identity)
         i += 1
-    return words[0], words[1], targets
+    if repo is None and len(url_repos) == 1:
+        repo = url_repos.pop()
+    return words[0], words[1], targets, repo
 
 
-def _mutations(command: str) -> list[tuple[str, str, frozenset[str]]]:
+def _mutations(command: str) -> list[tuple[str, str, frozenset[str], str | None]]:
     """Every `gh` mutation this command performs.
 
     One Bash call can hold several — `gh issue create … && gh issue create …`
     is the same duplicate shape written serially — so the walk covers each
     command start rather than only the first.
     """
-    found: list[tuple[str, str, frozenset[str]]] = []
+    found: list[tuple[str, str, frozenset[str], str | None]] = []
     try:
         tokens = safe_tokenize(command)
     except Exception:
@@ -210,35 +241,51 @@ def _mutations(command: str) -> list[tuple[str, str, frozenset[str]]]:
         split = _split_gh(argv)
         if split is None:
             continue
-        noun, verb, targets = split
+        noun, verb, targets, repo = split
         read_only = GH_READ_ONLY.get(noun)
         if read_only is None or verb in read_only:
             continue
-        found.append((noun, verb, frozenset(targets)))
+        found.append((noun, verb, frozenset(targets), repo))
     return found
+
+
+def _repos_compatible(first: str | None, second: str | None) -> bool:
+    """Whether two calls can be acting on the same repository.
+
+    None means the call named no repository, so it resolves to whatever the
+    working directory points at — unknowable from the payload. An unknown
+    scope is therefore compatible with every scope rather than with none: a
+    batch mixing `gh issue edit <url for 42>` with `gh issue edit 42` is the
+    duplicate this gate exists for, and treating the unknown as its own
+    distinct repository would let it through. Two explicitly different
+    repositories are the one case that cannot collide.
+    """
+    return first is None or second is None or first == second
 
 
 def _collision(payload: dict) -> tuple[str, str, int] | None:
     """`(noun, verb, count)` for the first colliding group, else None.
 
-    Two invocations of one `(noun, verb)` collide when their target sets
-    intersect, or when both are empty — the creation case, where no target
-    distinguishes them.
+    Two invocations of one `(noun, verb)` collide when they could be acting on
+    the same repository and their target sets intersect, or when both sets are
+    empty — the creation case, where no target distinguishes them.
     """
-    groups: dict[tuple[str, str], list[frozenset[str]]] = {}
+    groups: dict[tuple[str, str], list[tuple[frozenset[str], str | None]]] = {}
     for entry in _batch_entries(payload):
         command = _bash_command(entry)
         if command is None:
             continue
-        for noun, verb, targets in _mutations(command):
-            groups.setdefault((noun, verb), []).append(targets)
+        for noun, verb, targets, repo in _mutations(command):
+            groups.setdefault((noun, verb), []).append((targets, repo))
 
-    for (noun, verb), target_sets in groups.items():
-        for a in range(len(target_sets)):
-            for b in range(a + 1, len(target_sets)):
-                first, second = target_sets[a], target_sets[b]
+    for (noun, verb), calls in groups.items():
+        for a in range(len(calls)):
+            for b in range(a + 1, len(calls)):
+                (first, first_repo), (second, second_repo) = calls[a], calls[b]
+                if not _repos_compatible(first_repo, second_repo):
+                    continue
                 if (not first and not second) or (first & second):
-                    return noun, verb, len(target_sets)
+                    return noun, verb, len(calls)
     return None
 
 
