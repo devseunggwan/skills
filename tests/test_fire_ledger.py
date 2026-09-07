@@ -2111,6 +2111,28 @@ def test_write_sweeps_on_the_day_rollover(tmp_path, monkeypatch):
     assert survivor.exists()           # today's file existed — no second sweep
 
 
+def test_flushing_folded_passes_sweeps_on_the_day_rollover(tmp_path, monkeypatch):
+    """A day that has written nothing but folded passes still gets its sweep.
+
+    `record_standalone_fire` returns straight after buffering a pass, so the
+    sweep inside `_atomic_append` is never reached — without a second trigger
+    the day's housekeeping waits for the first non-pass write, which on a
+    quiet day may never come.
+    """
+    out = tmp_path / "fire-events-2099-01-01.jsonl"
+    monkeypatch.setenv("PRAXIS_FIRE_TELEMETRY_FILE", str(out))
+    monkeypatch.delenv("PRAXIS_FIRE_TELEMETRY_DISABLE", raising=False)
+    monkeypatch.setenv("PRAXIS_TELEMETRY_RETENTION_DAYS", "30")
+    stale = _dated(tmp_path, "fire-events-", 90)
+
+    fl.record_standalone_fire("h2099", "preflight-gate", 0)
+    assert not out.exists()   # a coarse pass writes no row at all
+    assert stale.exists()     # ...so nothing has swept yet
+
+    fl.flush_pass_counts()
+    assert not stale.exists()
+
+
 def test_count_session_fires_prefilter_matches_the_parse(tmp_path, monkeypatch):
     """The substring prefilter must not change a single count (#1078).
 

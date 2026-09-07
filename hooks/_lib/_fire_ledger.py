@@ -940,6 +940,17 @@ def _merge_pass_counts(
 ) -> None:
     """Add `bucket` into the counter file at `path`, atomically."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    # `_atomic_append` owns the daily sweep, and a day whose fires so far are
+    # all folded passes never reaches it: `record_standalone_fire` and a folded
+    # `record_session_fire` return straight after buffering. Housekeeping would
+    # then wait for the first non-pass write of the day. The rollover marker is
+    # shared across both telemetry families, so claiming it here is the same
+    # claim that path makes — whichever family writes first does the sweep.
+    if _day_rollover_pending(resolve_path()):
+        try:
+            _ = rotate_telemetry(path.parent)
+        except Exception:
+            pass  # housekeeping never breaks the write that triggered it
     with state_lock(str(path)):
         merged = read_pass_counts(path)
         for (hook, role, gran), row in bucket.items():
