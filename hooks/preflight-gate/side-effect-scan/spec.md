@@ -37,9 +37,12 @@ nothing outside this machine can observe the result. Git records the
 pre-command HEAD before each of them — `ORIG_HEAD` for merge / rebase /
 cherry-pick / revert, `HEAD@{1}` in the reflog for a plain commit — and
 `gc.reflogExpire` keeps reflog entries for 90 days by default (`man
-git-config`, verified on git 2.50.1). So `git reset --hard ORIG_HEAD`, `git
-reset --hard HEAD@{1}` or `git commit --amend` puts the previous state back
-from the same shell, with no second party to notify. The claim is checkable in
+git-config`, verified on git 2.50.1). So `git reset --hard ORIG_HEAD` (merge /
+rebase / cherry-pick / revert) or `git reset --hard HEAD@{1}` (a plain commit)
+puts the previous state back from the same shell, with no second party to
+notify. `git commit --amend` is not on that list: it replaces the commit rather
+than restoring the state before it, so it edits the mistake instead of undoing
+it. The claim is checkable in
 one command: `git reflog -n 2` after any of these prints the state to return
 to.
 
