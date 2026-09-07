@@ -75,13 +75,26 @@ def reset_pass_counters():
     counts would arrive in the last test's telemetry directory.
     """
     import sys
+    import types
 
     def _clear() -> None:
         # Every loaded copy, not just one: the suite loads `_fire_ledger`
         # through `SourceFileLoader` without registering it in `sys.modules`,
         # so a test module and the hook runtime it exercises each hold their
-        # own instance — and each has its own buffer.
-        for module in list(sys.modules.values()):
+        # own instance — and each has its own buffer. An unregistered copy is
+        # reachable only as an attribute of whichever module loaded it, which
+        # is why scanning `sys.modules` alone leaves one buffer uncleared:
+        # `tests/test_fire_ledger.py` keeps its copy as `fl`.
+        candidates = list(sys.modules.values())
+        for holder in list(sys.modules.values()):
+            if not isinstance(holder, types.ModuleType):
+                continue  # a stale `sys.modules` entry can be None
+            candidates.extend(
+                value
+                for value in vars(holder).values()
+                if isinstance(value, types.ModuleType)
+            )
+        for module in candidates:
             counts = getattr(module, "_pass_counts", None)
             if isinstance(counts, dict) and getattr(module, "__name__", "").endswith(
                 "_fire_ledger"
