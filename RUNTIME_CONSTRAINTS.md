@@ -342,9 +342,11 @@ measured runtime / Issue #1370 — status: **measured live**, canary dumps for
 `PostToolBatch`, `ConfigChange`, `SubagentStart`, plus the negative result
 below.
 
-**Adjacent measurement**: `PreCompact` fires even when the compaction is then
-refused ("Not enough messages to compact"), so its firing is not evidence that
-a compaction happened.
+**Adjacent measurement**: `PreCompact` firing is not evidence that a compaction
+happened. In the canary session it fired once and `PostCompact` — registered in
+the same settings file — fired zero times; the session ended three seconds
+later. A hook that treats `PreCompact` as "a compaction is underway" will act
+on compactions that never occur.
 
 **Adjacent measurement**: `WorktreeCreate` fires for the built-in worktree tool
 and **not** for a Bash `git worktree add`. Positive control: in the same
