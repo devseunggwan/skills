@@ -39,10 +39,11 @@ itself (mark_dispatcher_process) so its Bash-group members are not
 double-counted by the coarse path.
 
 SHELL HOOKS (issue #848): `impl.sh` hooks run no Python `main()`, so
-@fail_open never wraps them — all four (strike-counter across its three
-events, completion-verify, retrospect-mix-check, codex-review-route) held
-zero records while an audit reading this ledger scored their absence as
-"never fires". They now source `_lib/record_fire.sh` and arm an EXIT trap
+@fail_open never wraps them — all four at the time (strike-counter across
+its three events, completion-verify, retrospect-mix-check, and
+codex-review-route, since ported to Python in issue #1304) held zero records
+while an audit reading this ledger scored their absence as "never fires".
+They now source `_lib/record_fire.sh` and arm an EXIT trap
 (`praxis_fire_arm`) that writes exactly one RICH record per invocation via
 `record_session_fire`. Rich, not coarse: a shell hook has already parsed its
 own stdin payload and holds a real session_id. Because there is no coarse
@@ -97,10 +98,12 @@ Storage (precedence order — see `resolve_path`):
   Override: PRAXIS_FIRE_TELEMETRY_FILE (full path, used by tests)
   Dev:      <checkout>/.praxis-dev-telemetry/fire-events-YYYY-MM-DD.jsonl when
             this module lives inside a git checkout (issue #934)
-  Default:  ~/.praxis/telemetry/fire-events-YYYY-MM-DD.jsonl  (daily rotation;
-            a finished day is gzipped to <name>.<token>.jsonl.gz by a
-            detached child on the next day's first write, and swept after
-            PRAXIS_TELEMETRY_RETENTION_DAYS — #1078, #1238)
+  Default:  ~/.praxis/telemetry/fire-events-YYYY-MM-DD.jsonl — under
+            $PRAXIS_HOME/telemetry when PRAXIS_HOME relocates the tree
+            (issue #1340, via `_paths.praxis_home`). Daily rotation; a
+            finished day is gzipped to <name>.<token>.jsonl.gz by a detached
+            child on the next day's first write, and swept after
+            PRAXIS_TELEMETRY_RETENTION_DAYS — #1078, #1238.
   Opt-out:  PRAXIS_FIRE_TELEMETRY_DISABLE=1 → no-op
 
 Fail-open: any error → silently no-op. Never raises into the dispatcher.
@@ -151,6 +154,12 @@ _DENY_MARKER = '"permissionDecision": "deny"'
 # hide the starvation this record exists to surface.
 _SKIP_MARKER = "[dispatch] budget-skip"
 
+# Kept in sync with `_dispatch.STOP_LANE_EVENTS`: the events under which the
+# dispatcher accepts a top-level `{"decision": "block"}` / `{"systemMessage":
+# ...}` object as this member's decision. Classifying that shape under any
+# other event would record a block the dispatcher never enforced (#1337).
+STOP_LANE_EVENTS = ("Stop", "SubagentStop")
+
 
 def _is_stop_block(stdout: str) -> bool:
     """True iff `stdout` is a Stop-lane block object (issue #1169 / PR #1199).
@@ -175,6 +184,28 @@ def _is_stop_block(stdout: str) -> bool:
     return isinstance(obj, dict) and obj.get("decision") == "block"
 
 
+def _is_stop_advisory(stdout: str) -> bool:
+    """True iff `stdout` is a Stop-lane advisory object (issue #1281).
+
+    A Stop hook advises via a top-level `{"systemMessage": ...}` at exit 0
+    (`_hook_io.emit_stop_advisory`) — on stdout, not stderr, so the
+    stderr-based advise classification below never saw it and a grouped Stop
+    advisory was recorded as "pass". Same parse-only recognition as
+    `_is_stop_block`; a block object that also carries a systemMessage is a
+    block, which `classify_decision` checks first.
+    """
+    if not stdout:
+        return False
+    try:
+        obj = json.loads(stdout)
+    except ValueError:
+        return False
+    if not isinstance(obj, dict):
+        return False
+    message = obj.get("systemMessage")
+    return isinstance(message, str) and bool(message)
+
+
 def classify_decision(
     rc: int, stdout: str, stderr: str, event: str | None = None
 ) -> str:
@@ -183,7 +214,8 @@ def classify_decision(
     Mirrors `_dispatch.run_group`'s PER-MEMBER decision precedence (this is one
     member's own outcome, not the cross-member aggregate the dispatcher emits):
     block (exit 2 / deny marker / Stop-lane `{"decision": "block"}` JSON) >
-    ask (ask marker) > advise (any stderr) > pass.
+    ask (ask marker) > advise (any stderr, or a Stop-lane `{"systemMessage":
+    ...}` at exit 0) > pass.
     A dispatcher budget-skip record (never actually run) is decision "skip".
 
     `event` is the dispatcher's own event, not a payload field: run_group has it
@@ -204,13 +236,15 @@ def classify_decision(
     is_pretooluse = event == "PreToolUse"
     if rc == 2 or (is_pretooluse and _DENY_MARKER in stdout):
         return DECISION_BLOCK
-    if rc == 0 and event == "Stop" and _is_stop_block(stdout):
+    if rc == 0 and event in STOP_LANE_EVENTS and _is_stop_block(stdout):
         return DECISION_BLOCK
     if is_pretooluse and _ASK_MARKER in stdout:
         return DECISION_ASK
     if stderr.startswith(_SKIP_MARKER):
         return DECISION_SKIP
     if stderr.strip():
+        return DECISION_ADVISE
+    if rc == 0 and event in STOP_LANE_EVENTS and _is_stop_advisory(stdout):
         return DECISION_ADVISE
     return DECISION_PASS
 
@@ -688,6 +722,27 @@ def _checkout_root() -> Path | None:
     return root if (root / ".git").exists() else None
 
 
+def _praxis_home() -> Path:
+    """The `~/.praxis` root, `PRAXIS_HOME`-relocated (issue #1340).
+
+    Resolved through `_paths.praxis_home()` so the ledger follows the same
+    root every other runtime file does — `PRIVACY.md` promises `PRAXIS_HOME`
+    relocates the whole tree, and until #1340 this module was the one writer
+    that ignored it. The import is lazy and fail-open, like the `_paths`
+    import in `_hook_runtime._error_log_path`: `_paths` pulls in
+    `_state_lock`, which is absent when only this file has been copied
+    somewhere (the `record_fire.sh` escape-fallback probe does exactly that),
+    and a telemetry write must never take a hook down. The fallback restates
+    the same one-line rule rather than reverting to `~/.praxis`, so an import
+    failure cannot quietly reintroduce the defect this function fixes.
+    """
+    try:
+        from _paths import praxis_home  # type: ignore[import-not-found]
+        return Path(praxis_home())
+    except Exception:
+        return Path(os.path.expanduser(os.environ.get("PRAXIS_HOME") or "~/.praxis"))
+
+
 def resolve_telemetry_dir() -> Path:
     """Directory every praxis telemetry writer appends to.
 
@@ -697,17 +752,22 @@ def resolve_telemetry_dir() -> Path:
     `telemetry_dir`, so a split would corrupt both sides of that report at
     once: the default view would mix production fires with development
     bypasses, and `--dir <dev>` would show fires with no bypasses at all.
+
+    Precedence: dev checkout → `$PRAXIS_HOME/telemetry` → `~/.praxis/telemetry`.
+    The checkout probe stays first: a development run is development wherever
+    `PRAXIS_HOME` points, and `scripts/run-tests.sh` relies on that ordering.
     """
     checkout = _checkout_root()
     if checkout is not None:
         return checkout / DEV_LEDGER_DIRNAME
-    return Path.home() / ".praxis" / "telemetry"
+    return _praxis_home() / "telemetry"
 
 
 def resolve_path() -> Path:
     """Resolve today's fire-events JSONL path.
 
-    Precedence: `PRAXIS_FIRE_TELEMETRY_FILE` → dev checkout → real ledger.
+    Precedence: `PRAXIS_FIRE_TELEMETRY_FILE` → dev checkout → real ledger
+    (`$PRAXIS_HOME/telemetry`, else `~/.praxis/telemetry`).
     """
     override = os.environ.get("PRAXIS_FIRE_TELEMETRY_FILE", "").strip()
     if override:

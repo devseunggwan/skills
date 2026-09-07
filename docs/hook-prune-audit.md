@@ -1,12 +1,16 @@
 # Hook Prune Audit (issue #713)
 
+> **Snapshot.** Scored against the August 2026 roster (81 hooks, 63 exactly
+> scoreable). Every count below is historical by construction; the current
+> roster is `hooks/manifest.json` and the ledger it scores is described in
+> `docs/bypass-telemetry.md`.
+
 Evidence-based `keep` / `merge` / `drop` verdict for every hook in
 `hooks/manifest.json`, scored against the fire-rate ledger `bypass-review
-fire-rate` produces (issue #710). This applies ponytail's deletion-over-addition
-lens to praxis's own hook accretion — see the P4 work item in
-`.omc/specs/deep-dive-ponytail-vs-praxis-improvements.md` (local planning
-artifact — `.omc/` is gitignored, so this is a plain-text pointer rather than
-a repo-relative link).
+fire-rate` produces (issue #710). This applies a deletion-over-addition
+lens to praxis's own hook accretion: a hook that never fires is weight the
+suite carries on every tool call, not safety, and the ledger is the evidence
+that decides which is which.
 
 ## Data source
 
@@ -112,6 +116,14 @@ shell hook carries `# shellcheck source=…/record_fire.sh` one line above its
 real source line, so a substring test would keep calling a body instrumented
 after the executable line was deleted. With that fix the *uninstrumented*
 roster is empty: every registered hook can produce fire events.
+
+> **2026-09-05 note (issue #1304).** `codex-review-route` was ported from
+> `impl.sh` to `impl.py`, so the shell roster above is now three
+> (`completion-verify`, `retrospect-mix-check`, `strike-counter`). Its
+> ledger shape is unchanged — one RICH `advise` per emitted advisory via
+> `record_session_fire`, coarse `pass` otherwise — so the row and counts
+> above stand as measured; only the recording path moved. The three
+> remaining ports are tracked in the same issue.
 
 ## Axis 2 — advise-ignored-rate high
 
@@ -257,7 +269,7 @@ escalation counts as provisional.
 | **Keep, but not scoreable on Axis 4** | 2 | `askuserquestion-loop-signal` (observe-only by design — no escalation path), `pytest-direct-exec-advisory` (8 sessions) |
 | **Keep, but coarse-recorded — Axis 4 cannot see them** | 18 | The coarse-only list under Axis 4, including `memory-hint` (68,799 fires against 12 memories declaring `hookable: true`; its 0 escalations are *measurement-absent*, so the open question — do its `hookKeywords` match real tool-call text? — stays open) |
 | **Unmeasurable — instrument first** | 0 | — (closed by #847 + #892; see Axis 1) |
-| **Drop** | 0 | — |
+| **Drop** | 0 hooks; 3 *registrations* | The `mcp__.*slack.*\|mcp__.*notion.*` entries of `caller-probe-gate`, `composed-command-gate` and `source-citation-probe-gate`, removed 2026-09-06 (#1359). No hook NAME was dropped; all three keep their Bash registration |
 | **Total** | 81 | Matches `hooks/manifest.json`'s 81 distinct names (60+1+2+18) |
 
 ## Bottom line
