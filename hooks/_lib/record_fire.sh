@@ -65,8 +65,9 @@ praxis_fire_arm() {
 
 # _praxis_record_fire_py <lib_dir> <hook> <role> <decision> <session_id> <tool>
 #
-# Escape-fallback writer: delegates to `_fire_ledger.record_session_fire`,
-# whose json.dumps handles arbitrary field content. Reached only when a field
+# Escape-fallback writer: delegates to `_fire_ledger.record_session_fire`
+# with `fold_pass=False`, so it lands the same row the fast path would; its
+# json.dumps handles arbitrary field content. Reached only when a field
 # value falls outside the JSON-safe charset the fast path allows — in practice
 # never for the shipped hooks (session ids are UUID-shaped, the rest are
 # manifest literals), so the interpreter cold start stays off the hot path.
@@ -80,6 +81,10 @@ try:
     _fire_ledger.record_session_fire(
         hook=sys.argv[2], role=sys.argv[3], decision=sys.argv[4],
         session_id=sys.argv[5], tool=sys.argv[6],
+        # A row, not a counted pass: the fast path writes its row with a
+        # plain shell redirect, and this fallback stands in for exactly
+        # that path (issue #1238).
+        fold_pass=False,
     )
 except Exception:
     pass
