@@ -160,8 +160,10 @@ print(json.dumps({
 
 # --- detection: git mutation ------------------------------------------------
 # git-commit is ADVISE since issue #874, and on reversibility alone since
-# issue #1153: local-only, recoverable, nobody else has seen it. The
-# eight sibling commit hooks that gate this argv are context, not ground.
+# issue #1153: no remote ref moves and the pre-command HEAD is recoverable from
+# the same shell. A repository's own git hooks can still reach the network, so
+# that is a property of plain git, not of every checkout. The eight sibling
+# commit hooks that gate this argv are context, not ground.
 # git-push stays ASK (publishes shared state).
 run_case "git-commit bare"          advise "git commit -m 'wip'"
 run_case "git-merge"                advise "git merge feature-x"
