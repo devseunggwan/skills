@@ -30,7 +30,7 @@ Three things the canary verifies beyond that bare name diff:
 
 1. **Per-host coverage.** `side-effect-scan` itself carries no `hosts` key, so
    its ADVISE tier ships to every platform that installs hooks — but four
-   of the seven siblings carry `hosts: ["claude"]`, and
+   of the eight siblings carry `hosts: ["claude"]`, and
    ``_dispatch.group_members("PreToolUse", "Bash", host)`` applies that
    whitelist at runtime (the generated plugin invokes
    ``_dispatch.sh PreToolUse Bash <host>``). A count derived without the host
