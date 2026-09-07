@@ -1970,7 +1970,9 @@ def test_record_lands_under_praxis_home_outside_a_checkout(tmp_path):
                           capture_output=True, text=True, check=False)
     assert proc.returncode == 0 and proc.stdout.strip() == "True", proc.stderr
     today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
-    ledger = home / "telemetry" / f"fire-events-{today}.jsonl"
+    # A `pass` is counted, not appended, so the relocated root is proved by the
+    # counter file the subprocess flushed at exit.
+    ledger = home / "telemetry" / f"fire-counts-{today}.sess-1340.jsonl"
     recs = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
     assert [r["session_id"] for r in recs] == ["sess-1340"]
     assert not (tmp_path / "home" / ".praxis").exists()
