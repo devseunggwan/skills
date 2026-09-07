@@ -877,9 +877,13 @@ def _counts_key(rec: dict) -> tuple[str, str, str] | None:
     hook = rec.get("hook")
     if not isinstance(hook, str) or not hook:
         return None
-    role = rec.get("role") if isinstance(rec.get("role"), str) else ""
-    gran = rec.get("granularity") if isinstance(rec.get("granularity"), str) else ""
-    return hook, role, gran
+    role = rec.get("role")
+    gran = rec.get("granularity")
+    return (
+        hook,
+        role if isinstance(role, str) else "",
+        gran if isinstance(gran, str) else "",
+    )
 
 
 def read_pass_counts(path: Path) -> dict[tuple[str, str, str], dict]:
