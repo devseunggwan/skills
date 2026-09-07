@@ -1042,6 +1042,33 @@ def test_sessions_do_not_share_a_counter_file(tmp_path, monkeypatch):
     assert _pass_records("sess-two")[0]["count"] == 1
 
 
+def test_ids_the_filename_sanitiser_flattens_keep_separate_counters(tmp_path, monkeypatch):
+    """`a/b` and `ab` survive the strip identically — the digest separates them.
+
+    Sharing a file is not the whole damage: the merge keeps the first writer's
+    `session_id`, and `count_session_fires` filters on it, so the second
+    session would read its own count back as zero.
+    """
+    out = tmp_path / "fire-events.jsonl"
+    monkeypatch.setenv("PRAXIS_FIRE_TELEMETRY_FILE", str(out))
+    monkeypatch.delenv("PRAXIS_FIRE_TELEMETRY_DISABLE", raising=False)
+    members = [("preflight-gate", "gate-a", Path("x"))]
+    fl.record_group_fires(members, [(0, "", "")], _payload("a/b"))
+    fl.record_group_fires(members, [(0, "", "")], _payload("ab"))
+    assert fl.resolve_counts_path("a/b") != fl.resolve_counts_path("ab")
+    fl.flush_pass_counts()
+    assert fl.count_session_fires("gate-a", "a/b", "pass") == 1
+    assert fl.count_session_fires("gate-a", "ab", "pass") == 1
+
+
+def test_session_ids_sharing_a_long_prefix_keep_separate_counters(tmp_path, monkeypatch):
+    """The length cap is the sanitiser's other lossy half."""
+    out = tmp_path / "fire-events.jsonl"
+    monkeypatch.setenv("PRAXIS_FIRE_TELEMETRY_FILE", str(out))
+    prefix = "s" * 64
+    assert fl.resolve_counts_path(prefix + "-one") != fl.resolve_counts_path(prefix + "-two")
+
+
 def test_session_id_cannot_escape_the_telemetry_directory(tmp_path, monkeypatch):
     """The id reaches a filename from an untrusted payload."""
     out = tmp_path / "fire-events.jsonl"
@@ -1840,10 +1867,11 @@ def test_direct_shell_test_run_does_not_touch_the_real_ledger(tmp_path, monkeypa
     # The group's members overwhelmingly `pass`, and a pass lands in the
     # session's counter file rather than the events JSONL (#1238) — so the dev
     # side is proven by whichever of the two carries this invocation.
-    dev_counts = dev_file.parent / f"fire-counts-{today}.{session_id}.jsonl"
-    dev_written = _tail(dev_file, dev_offset) + (
-        dev_counts.read_text(encoding="utf-8", errors="replace")
-        if dev_counts.exists() else ""
+    # The counter filename carries a digest of the session id, so glob rather
+    # than rebuild it — this test asserts on the ledger root, not on the name.
+    dev_counts = sorted(dev_file.parent.glob(f"fire-counts-{today}.*.jsonl"))
+    dev_written = _tail(dev_file, dev_offset) + "".join(
+        path.read_text(encoding="utf-8", errors="replace") for path in dev_counts
     )
     assert session_id in dev_written, (
         "the dev ledger did not receive this invocation — telemetry silently off?"
@@ -1972,7 +2000,7 @@ def test_record_lands_under_praxis_home_outside_a_checkout(tmp_path):
     today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
     # A `pass` is counted, not appended, so the relocated root is proved by the
     # counter file the subprocess flushed at exit.
-    ledger = home / "telemetry" / f"fire-counts-{today}.sess-1340.jsonl"
+    ledger = home / "telemetry" / f"fire-counts-{today}.{fl._session_token('sess-1340')}.jsonl"
     recs = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
     assert [r["session_id"] for r in recs] == ["sess-1340"]
     assert not (tmp_path / "home" / ".praxis").exists()

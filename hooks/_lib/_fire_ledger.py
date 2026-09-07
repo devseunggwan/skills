@@ -112,6 +112,7 @@ from __future__ import annotations
 
 import atexit
 import gzip
+import hashlib
 import json
 import os
 import re
@@ -821,6 +822,8 @@ _COUNTS_PREFIX = "fire-counts-"
 # that survives as empty shares one file rather than escaping the directory.
 _SESSION_TOKEN_STRIP = re.compile(r"[^0-9A-Za-z_-]")
 _NO_SESSION_TOKEN = "nosession"
+_SESSION_TOKEN_HEAD = 40
+_SESSION_TOKEN_DIGEST = 12
 
 # session_id -> {(hook, role, granularity): {"count", "timestamp", "tool"}}
 _pass_counts: dict[str, dict[tuple[str, str, str], dict]] = {}
@@ -828,7 +831,23 @@ _flush_registered = False
 
 
 def _session_token(session_id: str) -> str:
-    return _SESSION_TOKEN_STRIP.sub("", session_id or "")[:64] or _NO_SESSION_TOKEN
+    """Map a session id onto one filename component, injectively.
+
+    The strip and the length cap are both lossy — `a/b` and `ab` reduce to the
+    same head, and so do two ids sharing a 40-character prefix — while the
+    file they name is what `count_session_fires` filters by `session_id`. Two
+    sessions landing in one file therefore do not merely share it: the merge
+    keeps the first writer's id, so the second session reads its own count as
+    zero. The digest of the *original* id is what separates them; the readable
+    head stays because the filename is what a human greps for.
+    """
+    if not session_id:
+        return _NO_SESSION_TOKEN
+    head = _SESSION_TOKEN_STRIP.sub("", session_id)[:_SESSION_TOKEN_HEAD]
+    digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[
+        :_SESSION_TOKEN_DIGEST
+    ]
+    return f"{head}-{digest}" if head else digest
 
 
 def resolve_counts_path(session_id: str) -> Path:
