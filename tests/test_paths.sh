@@ -347,9 +347,19 @@ PYEOF
 env -u PRAXIS_FIRE_TELEMETRY_FILE HOME="$LEDGER_ROOT/home" PRAXIS_HOME="$LEDGER_ROOT/relocated" \
   PRAXIS_LIB_DIR="$LEDGER_LIB" \
   sh -c '. "$1/record_fire.sh"; praxis_record_fire sh-hook role pass sess-1340 ""' _ "$LEDGER_LIB"
+# The python writer counts its `pass` rather than appending it (issue #1238),
+# so it lands in a `fire-counts-*` sibling; the shell fast path still appends.
+# Both files sit in the same relocated telemetry directory, which is what this
+# case is about, so the probe reads the directory rather than one file.
 assert_eq "fire ledger: both writers land in \$PRAXIS_HOME/telemetry outside a checkout" \
   "py-hook sh-hook" \
-  "$(python3 -c 'import json, sys; print(" ".join(json.loads(l)["hook"] for l in open(sys.argv[1]) if l.strip()))' "$LEDGER_FILE" 2>/dev/null)"
+  "$(python3 -c '
+import glob, json, os, sys
+hooks = []
+for path in sorted(glob.glob(os.path.join(sys.argv[1], "fire-*.jsonl"))):
+    with open(path) as handle:
+        hooks.extend(json.loads(l)["hook"] for l in handle if l.strip())
+print(" ".join(sorted(hooks)))' "$(dirname "$LEDGER_FILE")" 2>/dev/null)"
 assert_eq "fire ledger: nothing written under HOME/.praxis" "" \
   "$(find "$LEDGER_ROOT/home" -type f 2>/dev/null)"
 # The shell writer's inline rule is a restatement of _paths.sh praxis_home(),
