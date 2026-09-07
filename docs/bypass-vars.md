@@ -26,6 +26,7 @@ in [`../SECURITY.md`](../SECURITY.md).
 | ---------- | ------ | ----------------- |
 | `PRAXIS_HOOK_BYPASS_PROTECTED_PATHS` | `protected-paths-guard` | Skip the sensitive-file write guard |
 | `PRAXIS_HOOK_BYPASS_SETTINGS_PATH` | `settings-path-advisory` | Skip the Claude Code settings-file write advisory |
+| `PRAXIS_HOOK_BYPASS_DELEGATION_CONTEXT` | `delegation-context-inject` | Skip the subagent shared-state isolation contract injection |
 | `PRAXIS_HOOK_BYPASS_DESTRUCTIVE_BASH` | `destructive-bash-guard` | Skip the destructive-command guard |
 | `PRAXIS_HOOK_BYPASS_SKILL_GATE` | `skill-gate-commands` | Skip the skill-gated-command preflight |
 | `PRAXIS_HOOK_BYPASS_WORKTREE_GATE` | `worktree-edit-gate` | Skip the worktree-edit preflight |
